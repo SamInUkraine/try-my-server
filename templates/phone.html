@@ -36,13 +36,10 @@
     <p>Напишіть щось:</p>
     <textarea id="txt" placeholder="будь-який текст"></textarea>
     <br>
-    <button id="send">Надіслати</button>
-
-    <p>Або проведіть пальцем у цьому полі:</p>
+    <p>Можете провести пальцем по цьому полі:</p>
     <div id="pad"></div>
   </div>
 
-  <div id="status">Підключення...</div>
 
 <script>
   var socket = io();
@@ -90,12 +87,6 @@
   document.getElementById("txt").addEventListener("input", function(e){
     socket.emit("typing", { text: e.target.value });
   });
-  document.getElementById("send").addEventListener("click", function(){
-    var t = document.getElementById("txt").value;
-    socket.emit("typing", { text: t });
-    status.textContent = "Надіслано";
-  });
-
   // Палець: шлемо позицію у відсотках від поля.
   var pad = document.getElementById("pad");
   function sendTouch(e, down){
@@ -107,11 +98,6 @@
   }
   pad.addEventListener("touchstart", function(e){ e.preventDefault(); sendTouch(e, true); }, {passive:false});
   pad.addEventListener("touchmove",  function(e){ e.preventDefault(); sendTouch(e, true); }, {passive:false});
-  // Миша — щоб перевіряти з ноутбука.
-  var down = false;
-  pad.addEventListener("mousedown", function(e){ down = true; sendTouch(e, true); });
-  pad.addEventListener("mousemove", function(e){ if (down) sendTouch(e, true); });
-  window.addEventListener("mouseup", function(){ down = false; });
 </script>
 </body>
 </html>
