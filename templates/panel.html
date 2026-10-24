@@ -53,7 +53,7 @@
     }
   }
   function applyAll(){
-    stageEl.textContent = stage;
+    if (stageEl) stageEl.textContent = stage;  
     for (var id in cards) applyStage(cards[id]);
   }
 
