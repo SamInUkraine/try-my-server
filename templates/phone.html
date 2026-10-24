@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Демонстрація</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; color: #000; background: #fff;
+         margin: 16px; line-height: 1.4; }
+  h2 { margin: 0 0 12px; }
+  #consent { border: 1px solid #000; padding: 12px; }
+  #consent label { display: block; margin-top: 8px; }
+  #main { display: none; margin-top: 16px; }
+  textarea { width: 100%; height: 90px; font-size: 16px; padding: 8px;
+             border: 1px solid #000; box-sizing: border-box; }
+  button { margin-top: 8px; padding: 8px 14px; font-size: 16px; }
+  #pad { border: 1px solid #000; height: 160px; margin-top: 8px;
+         position: relative; touch-action: none; }
+  #status { margin-top: 16px; color: #555; font-size: 13px; }
+</style>
+</head>
+<body>
+  <h2>Демонстрація приватності</h2>
+
+  <div id="consent">
+    <p>Ця сторінка створена для демонстрації на занятті.</p>
+    <label>
+      <input type="checkbox" id="agree">
+      Я розумію, що ця сторінка створена для демонстрації та деяка
+      інформація мого пристрою буде виведена на екран.
+    </label>
+  </div>
+
+  <div id="main">
+    <p>Напишіть щось:</p>
+    <textarea id="txt" placeholder="будь-який текст"></textarea>
+    <br>
+    <button id="send">Надіслати</button>
+
+    <p>Або проведіть пальцем у цьому полі:</p>
+    <div id="pad"></div>
+  </div>
+
+  <div id="status">Підключення...</div>
+
+<script>
+  var socket = io();
+  var status = document.getElementById("status");
+
+  socket.on("connect", function(){ status.textContent = "Підключено"; });
+  socket.on("disconnect", function(){ status.textContent = "Відключено"; });
+  socket.on("you_are", function(d){ status.textContent = "Ви на екрані як відвідувач #" + d.num; });
+
+  // Дізнаємося відеокарту через WebGL (так це роблять справжні трекери).
+  function getGPU(){
+    try {
+      var c = document.createElement("canvas");
+      var gl = c.getContext("webgl") || c.getContext("experimental-webgl");
+      var dbg = gl.getExtension("WEBGL_debug_renderer_info");
+      return gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+    } catch(e) { return "невідомо"; }
+  }
+
+  // Збираємо все, що браузер віддає без жодного дозволу.
+  function collectDevice(){
+    return {
+      cores: navigator.hardwareConcurrency || "невідомо",
+      memory: navigator.deviceMemory ? (navigator.deviceMemory + " ГБ") : "невідомо",
+      gpu: getGPU(),
+      screen: screen.width + "×" + screen.height + " (×" + (window.devicePixelRatio || 1) + ")",
+      platform: navigator.platform || "невідомо",
+      touch: (navigator.maxTouchPoints || 0) > 0 ? ("так, " + navigator.maxTouchPoints + " точок") : "ні",
+      browser: navigator.userAgent,
+      language: navigator.language || "невідомо",
+      languages: (navigator.languages || []).join(", "),
+      timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone) || "невідомо"
+    };
+  }
+
+  // Поки галочка не стоїть — глядача на екрані немає.
+  document.getElementById("agree").addEventListener("change", function(e){
+    if (!e.target.checked) return;
+    document.getElementById("consent").style.display = "none";
+    document.getElementById("main").style.display = "block";
+    socket.emit("hello_phone", { device: collectDevice() });
+  });
+
+  // Текст: шлемо весь поточний вміст після кожної зміни.
+  document.getElementById("txt").addEventListener("input", function(e){
+    socket.emit("typing", { text: e.target.value });
+  });
+  document.getElementById("send").addEventListener("click", function(){
+    var t = document.getElementById("txt").value;
+    socket.emit("typing", { text: t });
+    status.textContent = "Надіслано";
+  });
+
+  // Палець: шлемо позицію у відсотках від поля.
+  var pad = document.getElementById("pad");
+  function sendTouch(e, down){
+    var t = (e.touches && e.touches[0]) ? e.touches[0] : e;
+    var r = pad.getBoundingClientRect();
+    var x = ((t.clientX - r.left) / r.width) * 100;
+    var y = ((t.clientY - r.top) / r.height) * 100;
+    socket.emit("touch", { x: x, y: y, down: down });
+  }
+  pad.addEventListener("touchstart", function(e){ e.preventDefault(); sendTouch(e, true); }, {passive:false});
+  pad.addEventListener("touchmove",  function(e){ e.preventDefault(); sendTouch(e, true); }, {passive:false});
+  // Миша — щоб перевіряти з ноутбука.
+  var down = false;
+  pad.addEventListener("mousedown", function(e){ down = true; sendTouch(e, true); });
+  pad.addEventListener("mousemove", function(e){ if (down) sendTouch(e, true); });
+  window.addEventListener("mouseup", function(){ down = false; });
+</script>
+</body>
+</html>

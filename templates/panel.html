@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Панель</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; color: #000; background: #fff;
+         margin: 16px; }
+  #bar { margin-bottom: 14px; font-size: 18px; }
+  #bar b { font-size: 20px; }
+  #hint { color: #555; font-size: 14px; }
+  #grid { display: grid; gap: 12px;
+          grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .card { border: 1px solid #000; padding: 10px; }
+  .card h3 { margin: 0 0 8px; font-size: 18px; }
+  .block { display: none; margin-top: 8px; }
+  .block.show { display: block; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  td { border: 1px solid #999; padding: 3px 6px; vertical-align: top; }
+  td.k { width: 38%; color: #333; }
+  .ua { font-size: 12px; word-break: break-all; }
+  .typed { font-family: monospace; font-size: 15px; border: 1px solid #999;
+           padding: 6px; min-height: 22px; white-space: pre-wrap; word-break: break-word; }
+  .pad { border: 1px solid #999; height: 130px; position: relative; overflow: hidden; }
+  .dot { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
+         border-radius: 50%; }
+  #empty { color: #555; }
+</style>
+</head>
+<body>
+  <div id="bar">
+    Відвідувачів онлайн: <b id="num">0</b> &nbsp;|&nbsp;
+    Відкрито блоків: <b id="stage">0</b>/4
+    <div id="hint">Пробіл — показати наступний блок. Стрілка вліво — сховати останній.</div>
+  </div>
+  <div id="grid"><span id="empty">Очікуємо відвідувачів...</span></div>
+
+<script>
+  var socket = io();
+  var grid = document.getElementById("grid");
+  var empty = document.getElementById("empty");
+  var numEl = document.getElementById("num");
+  var stageEl = document.getElementById("stage");
+  var cards = {};        // id -> елемент картки
+  var stage = 0;         // скільки блоків відкрито (0..4), керується пробілом
+
+  // stage 1 = пристрій, 2 = мова, 3 = текст, 4 = пальці
+  function applyStage(card){
+    var blocks = card.querySelectorAll(".block");
+    for (var i = 0; i < blocks.length; i++){
+      if (i < stage) blocks[i].classList.add("show");
+      else blocks[i].classList.remove("show");
+    }
+  }
+  function applyAll(){
+    stageEl.textContent = stage;
+    for (var id in cards) applyStage(cards[id]);
+  }
+
+  document.addEventListener("keydown", function(e){
+    if (e.code === "Space"){ e.preventDefault(); if (stage < 4){ stage++; applyAll(); } }
+    if (e.code === "ArrowLeft"){ e.preventDefault(); if (stage > 0){ stage--; applyAll(); } }
+  });
+
+  function esc(s){
+    return String(s).replace(/[&<>"']/g, function(m){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]; });
+  }
+
+  function render(v){
+    if (cards[v.id]) return;
+    var d = v.device || {};
+    var card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML =
+      '<h3>Відвідувач #' + v.num + ' (' + esc(v.colorname) + ')</h3>' +
+      // блок 1 — пристрій
+      '<div class="block"><table>' +
+        '<tr><td class="k">Ядер процесора</td><td>' + esc(d.cores) + '</td></tr>' +
+        '<tr><td class="k">Памʼять</td><td>' + esc(d.memory) + '</td></tr>' +
+        '<tr><td class="k">Відеокарта</td><td>' + esc(d.gpu) + '</td></tr>' +
+        '<tr><td class="k">Екран</td><td>' + esc(d.screen) + '</td></tr>' +
+        '<tr><td class="k">Платформа</td><td>' + esc(d.platform) + '</td></tr>' +
+        '<tr><td class="k">Сенсорний екран</td><td>' + esc(d.touch) + '</td></tr>' +
+        '<tr><td class="k">Браузер</td><td class="ua">' + esc(d.browser) + '</td></tr>' +
+      '</table></div>' +
+      // блок 2 — мова / час
+      '<div class="block"><table>' +
+        '<tr><td class="k">Мова</td><td>' + esc(d.language) + '</td></tr>' +
+        '<tr><td class="k">Усі мови</td><td>' + esc(d.languages) + '</td></tr>' +
+        '<tr><td class="k">Часовий пояс</td><td>' + esc(d.timezone) + '</td></tr>' +
+      '</table></div>' +
+      // блок 3 — що друкує
+      '<div class="block">Друкує: <div class="typed">' + esc(v.text || "") + '</div></div>' +
+      // блок 4 — пальці
+      '<div class="block">Палець на екрані:<div class="pad"></div></div>';
+    grid.appendChild(card);
+    cards[v.id] = card;
+    applyStage(card);
+    empty.style.display = "none";
+    numEl.textContent = Object.keys(cards).length;
+  }
+
+  socket.on("connect", function(){ socket.emit("hello_panel"); });
+  socket.on("state", function(list){ list.forEach(render); });
+  socket.on("visitor_join", render);
+  socket.on("visitor_leave", function(d){
+    var c = cards[d.id]; if (!c) return;
+    c.remove(); delete cards[d.id];
+    numEl.textContent = Object.keys(cards).length;
+    if (!Object.keys(cards).length) empty.style.display = "inline";
+  });
+
+  socket.on("typing", function(d){
+    var c = cards[d.id]; if (!c) return;
+    c.querySelector(".typed").textContent = d.text;
+  });
+
+  socket.on("touch", function(d){
+    var c = cards[d.id]; if (!c) return;
+    var pad = c.querySelector(".pad");
+    var dot = document.createElement("div");
+    dot.className = "dot";
+    dot.style.left = d.x + "%";
+    dot.style.top = d.y + "%";
+    dot.style.background = d.color;
+    dot.style.opacity = d.down ? "1" : "0.4";
+    pad.appendChild(dot);
+    setTimeout(function(){ dot.remove(); }, 1500);
+  });
+</script>
+</body>
+</html>
